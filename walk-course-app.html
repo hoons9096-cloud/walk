@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚶 동네 산책 코스 추천</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans KR', sans-serif;
+    background: #f0f4f0;
+    color: #2d3436;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #00b894, #00cec9);
+    color: white;
+    padding: 20px 24px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,184,148,0.3);
+    position: relative;
+    z-index: 1000;
+  }
+  .header h1 { font-size: 1.5rem; font-weight: 700; }
+  .header p { font-size: 0.85rem; opacity: 0.9; margin-top: 4px; }
+
+  /* Main layout */
+  .container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  /* Weather card */
+  .weather-card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .weather-icon { font-size: 3rem; }
+  .weather-info h3 { font-size: 0.85rem; color: #636e72; font-weight: 400; }
+  .weather-temp { font-size: 2rem; font-weight: 700; color: #2d3436; }
+  .weather-desc { font-size: 0.85rem; color: #636e72; margin-top: 2px; }
+  .weather-tags { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .weather-tag {
+    background: #dfe6e9;
+    color: #636e72;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  /* Location input */
+  .location-section {
+    background: white;
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .location-section label {
+    font-size: 0.8rem;
+    color: #636e72;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 8px;
+  }
+  .location-row {
+    display: flex;
+    gap: 8px;
+  }
+  .location-input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 2px solid #dfe6e9;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .location-input:focus { border-color: #00b894; }
+  .location-btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-gps {
+    background: #00b894;
+    color: white;
+  }
+  .btn-gps:hover { background: #00a381; }
+  .btn-search {
+    background: #0984e3;
+    color: white;
+  }
+  .btn-search:hover { background: #0773c5; }
+
+  /* Preferences */
+  .pref-section {
+    background: white;
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .pref-section label {
+    font-size: 0.8rem;
+    color: #636e72;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 10px;
+  }
+  .pref-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .pref-chip {
+    padding: 8px 16px;
+    border: 2px solid #dfe6e9;
+    border-radius: 24px;
+    background: white;
+    font-size: 0.85rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+  }
+  .pref-chip:hover { border-color: #00b894; }
+  .pref-chip.active {
+    background: #00b894;
+    color: white;
+    border-color: #00b894;
+  }
+
+  /* Generate button */
+  .generate-btn {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, #00b894, #00cec9);
+    color: white;
+    border: none;
+    border-radius: 16px;
+    font-size: 1.1rem;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 16px rgba(0,184,148,0.3);
+    transition: all 0.2s;
+  }
+  .generate-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,184,148,0.4);
+  }
+  .generate-btn:active { transform: translateY(0); }
+  .generate-btn:disabled {
+    background: #b2bec3;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Map */
+  .map-container {
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    display: none;
+  }
+  #map { height: 300px; width: 100%; }
+
+  /* Course cards */
+  .courses-section { margin-bottom: 24px; }
+  .courses-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .course-card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    cursor: pointer;
+    transition: all 0.3s;
+    border-left: 4px solid transparent;
+  }
+  .course-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  }
+  .course-card.selected {
+    border-left-color: #00b894;
+    background: #f0fff4;
+  }
+
+  .course-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+  .course-name { font-size: 1.05rem; font-weight: 700; }
+  .course-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-easy { background: #d4edda; color: #155724; }
+  .badge-medium { background: #fff3cd; color: #856404; }
+  .badge-hard { background: #f8d7da; color: #721c24; }
+
+  .course-desc {
+    font-size: 0.85rem;
+    color: #636e72;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .course-stats {
+    display: flex;
+    gap: 16px;
+  }
+  .course-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: #636e72;
+  }
+  .course-stat strong {
+    color: #2d3436;
+    font-weight: 600;
+  }
+
+  .course-reason {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #f0f9f4;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    color: #00a381;
+    line-height: 1.5;
+  }
+  .course-reason::before {
+    content: '💡 ';
+  }
+
+  /* Loading */
+  .loading {
+    text-align: center;
+    padding: 40px;
+    display: none;
+  }
+  .loading.show { display: block; }
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #dfe6e9;
+    border-top-color: #00b894;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: #636e72; font-size: 0.9rem; }
+
+  /* AI message */
+  .ai-message {
+    background: linear-gradient(135deg, #ffeaa7, #fdcb6e);
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    display: none;
+    box-shadow: 0 2px 12px rgba(253,203,110,0.3);
+  }
+  .ai-message strong { font-weight: 700; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 20px;
+    color: #b2bec3;
+    font-size: 0.75rem;
+  }
+
+  /* Animations */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in {
+    animation: fadeInUp 0.5s ease-out forwards;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🚶 동네 산책 코스 추천</h1>
+  <p>AI가 날씨와 환경을 고려해 최적의 코스를 찾아드려요</p>
+</div>
+
+<div class="container">
+  <!-- Weather -->
+  <div class="weather-card" id="weatherCard" style="display:none">
+    <div class="weather-icon" id="weatherIcon">☀️</div>
+    <div class="weather-info">
+      <h3 id="weatherLocation">위치 정보</h3>
+      <div class="weather-temp" id="weatherTemp">--°</div>
+      <div class="weather-desc" id="weatherDesc">날씨 정보를 불러오는 중...</div>
+      <div class="weather-tags" id="weatherTags"></div>
+    </div>
+  </div>
+
+  <!-- Location -->
+  <div class="location-section">
+    <label>📍 산책할 동네를 알려주세요</label>
+    <div class="location-row">
+      <input type="text" class="location-input" id="locationInput" placeholder="예: 홍대, 잠실, 북촌..." />
+      <button class="location-btn btn-search" onclick="searchLocation()">검색</button>
+      <button class="location-btn btn-gps" onclick="getMyLocation()">📍 내 위치</button>
+    </div>
+  </div>
+
+  <!-- Preferences -->
+  <div class="pref-section">
+    <label>⏱️ 산책 시간</label>
+    <div class="pref-chips" id="timeChips">
+      <button class="pref-chip" data-value="15">15분</button>
+      <button class="pref-chip active" data-value="30">30분</button>
+      <button class="pref-chip" data-value="60">1시간</button>
+      <button class="pref-chip" data-value="90">1시간+</button>
+    </div>
+  </div>
+
+  <div class="pref-section">
+    <label>🎯 산책 목적</label>
+    <div class="pref-chips" id="purposeChips">
+      <button class="pref-chip active" data-value="relax">여유 산책</button>
+      <button class="pref-chip" data-value="exercise">운동</button>
+      <button class="pref-chip" data-value="photo">사진 찍기</button>
+      <button class="pref-chip" data-value="cafe">카페 탐방</button>
+    </div>
+  </div>
+
+  <!-- Generate -->
+  <button class="generate-btn" id="generateBtn" onclick="generateCourses()">
+    ✨ AI 코스 추천받기
+  </button>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">AI가 최적의 산책 코스를 찾고 있어요...</div>
+  </div>
+
+  <!-- AI Message -->
+  <div class="ai-message" id="aiMessage"></div>
+
+  <!-- Map -->
+  <div class="map-container" id="mapContainer">
+    <div id="map"></div>
+  </div>
+
+  <!-- Courses -->
+  <div class="courses-section" id="coursesSection" style="display:none">
+    <div class="courses-title">📋 추천 코스</div>
+    <div id="coursesList"></div>
+  </div>
+
+  <div class="footer">
+    🌿 동네 산책 코스 추천 v1.0 — 지리교육 × AI 프로젝트
+  </div>
+</div>
+
+<script>
+// ===== 상태 관리 =====
+let currentLat = null;
+let currentLng = null;
+let currentLocationName = '';
+let map = null;
+let routeLayer = null;
+let selectedTime = 30;
+let selectedPurpose = 'relax';
+
+// ===== 칩 선택 기능 =====
+document.querySelectorAll('#timeChips .pref-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#timeChips .pref-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    selectedTime = parseInt(chip.dataset.value);
+  });
+});
+
+document.querySelectorAll('#purposeChips .pref-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#purposeChips .pref-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    selectedPurpose = chip.dataset.value;
+  });
+});
+
+// ===== 위치 검색 (Nominatim - 무료 API) =====
+async function searchLocation() {
+  const query = document.getElementById('locationInput').value.trim();
+  if (!query) return alert('장소를 입력해주세요!');
+
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=kr&limit=1`);
+    const data = await res.json();
+
+    if (data.length === 0) {
+      alert('장소를 찾을 수 없어요. 다른 이름으로 검색해보세요!');
+      return;
+    }
+
+    currentLat = parseFloat(data[0].lat);
+    currentLng = parseFloat(data[0].lon);
+    currentLocationName = query;
+    updateWeather();
+  } catch (e) {
+    alert('검색 중 오류가 발생했어요. 다시 시도해주세요!');
+  }
+}
+
+// ===== GPS 위치 =====
+function getMyLocation() {
+  if (!navigator.geolocation) {
+    alert('이 브라우저에서는 GPS를 사용할 수 없어요.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      currentLat = pos.coords.latitude;
+      currentLng = pos.coords.longitude;
+
+      // 역지오코딩으로 동네 이름 가져오기
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}`);
+        const data = await res.json();
+        const addr = data.address;
+        currentLocationName = addr.borough || addr.suburb || addr.neighbourhood || addr.city || '내 위치';
+        document.getElementById('locationInput').value = currentLocationName;
+      } catch (e) {
+        currentLocationName = '내 위치';
+      }
+      updateWeather();
+    },
+    () => alert('위치 접근을 허용해주세요!')
+  );
+}
+
+// Enter 키로 검색
+document.getElementById('locationInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchLocation();
+});
+
+// ===== 날씨 시뮬레이션 =====
+// (실제 앱에서는 OpenWeatherMap 등의 API를 사용합니다)
+function getSimulatedWeather() {
+  const hour = new Date().getHours();
+  const month = new Date().getMonth() + 1;
+
+  // 계절별 기본 온도
+  let baseTemp;
+  if (month >= 3 && month <= 5) baseTemp = 14 + Math.random() * 8;       // 봄
+  else if (month >= 6 && month <= 8) baseTemp = 25 + Math.random() * 8;  // 여름
+  else if (month >= 9 && month <= 11) baseTemp = 10 + Math.random() * 10; // 가을
+  else baseTemp = -3 + Math.random() * 8;                                  // 겨울
+
+  // 시간대 보정
+  if (hour < 7 || hour > 20) baseTemp -= 3;
+  if (hour >= 12 && hour <= 15) baseTemp += 2;
+
+  const temp = Math.round(baseTemp);
+  const humidity = 40 + Math.round(Math.random() * 40);
+  const uvIndex = (hour >= 10 && hour <= 16) ? Math.round(Math.random() * 8 + 2) : Math.round(Math.random() * 3);
+
+  // 날씨 상태 랜덤
+  const weathers = [
+    { icon: '☀️', desc: '맑음', code: 'clear' },
+    { icon: '⛅', desc: '구름 조금', code: 'partly_cloudy' },
+    { icon: '☁️', desc: '흐림', code: 'cloudy' },
+    { icon: '🌧️', desc: '가벼운 비', code: 'rain' },
+    { icon: '🌤️', desc: '대체로 맑음', code: 'mostly_clear' },
+  ];
+  const w = weathers[Math.floor(Math.random() * weathers.length)];
+
+  const windSpeed = Math.round(Math.random() * 15 + 2);
+  const pm25 = Math.round(Math.random() * 80 + 10);
+
+  return { temp, humidity, uvIndex, windSpeed, pm25, ...w };
+}
+
+function updateWeather() {
+  const weather = getSimulatedWeather();
+  window.currentWeather = weather;
+
+  document.getElementById('weatherCard').style.display = 'flex';
+  document.getElementById('weatherIcon').textContent = weather.icon;
+  document.getElementById('weatherLocation').textContent = currentLocationName;
+  document.getElementById('weatherTemp').textContent = `${weather.temp}°`;
+  document.getElementById('weatherDesc').textContent = weather.desc;
+
+  const tags = [];
+  tags.push(`습도 ${weather.humidity}%`);
+  tags.push(`바람 ${weather.windSpeed}m/s`);
+  tags.push(`자외선 ${weather.uvIndex}`);
+  tags.push(`미세먼지 ${weather.pm25 < 30 ? '좋음' : weather.pm25 < 50 ? '보통' : '나쁨'}`);
+
+  document.getElementById('weatherTags').innerHTML = tags.map(t => `<span class="weather-tag">${t}</span>`).join('');
+}
+
+// ===== 코스 생성 AI 로직 =====
+function generateCourses() {
+  if (!currentLat || !currentLng) {
+    alert('먼저 위치를 검색하거나 GPS로 설정해주세요!');
+    return;
+  }
+
+  const loading = document.getElementById('loading');
+  const coursesSection = document.getElementById('coursesSection');
+  const aiMessage = document.getElementById('aiMessage');
+
+  loading.classList.add('show');
+  coursesSection.style.display = 'none';
+  aiMessage.style.display = 'none';
+  document.getElementById('generateBtn').disabled = true;
+
+  // 시뮬레이션: AI가 분석하는 시간
+  setTimeout(() => {
+    loading.classList.remove('show');
+    document.getElementById('generateBtn').disabled = false;
+
+    const weather = window.currentWeather;
+    const courses = buildCourses(weather);
+
+    // AI 메시지
+    let msg = `<strong>🤖 AI 분석 결과</strong><br>`;
+    msg += `현재 ${currentLocationName}은(는) ${weather.desc}, ${weather.temp}°C 입니다. `;
+
+    if (weather.code === 'rain') {
+      msg += `비가 오고 있어서 지붕이 있는 구간 위주로 추천했어요. `;
+    } else if (weather.temp > 30) {
+      msg += `더운 날씨라 그늘이 많은 코스를 우선 추천했어요. `;
+    } else if (weather.temp < 5) {
+      msg += `추운 날씨라 따뜻한 카페를 경유하는 코스를 포함했어요. `;
+    } else {
+      msg += `산책하기 좋은 날씨네요! `;
+    }
+
+    if (weather.pm25 >= 50) {
+      msg += `미세먼지가 높으니 마스크를 착용하시고, 짧은 코스를 권장해요.`;
+    } else if (weather.uvIndex >= 6) {
+      msg += `자외선이 강하니 모자나 선크림을 챙기세요!`;
+    } else {
+      msg += `오늘 하루도 즐거운 산책 되세요! 🌿`;
+    }
+
+    aiMessage.innerHTML = msg;
+    aiMessage.style.display = 'block';
+    aiMessage.classList.add('fade-in');
+
+    // 지도 표시
+    showMap();
+
+    // 코스 카드 표시
+    renderCourses(courses);
+  }, 2000);
+}
+
+function buildCourses(weather) {
+  // 코스 데이터베이스 (실제 앱에서는 서버에서 가져옴)
+  const allCourses = [
+    // 여유 산책
+    {
+      name: `${currentLocationName} 공원 한 바퀴`,
+      desc: '잔디밭과 벤치가 있는 동네 공원을 천천히 돌아보는 코스. 중간에 쉴 곳이 많아 부담 없어요.',
+      difficulty: 'easy', distKm: 1.5, timeMin: 20, calories: 80,
+      purpose: ['relax', 'photo'], allWeather: false,
+      reason: '평탄한 길로 이루어져 있어 가벼운 산책에 딱이에요.',
+      points: [[0, 0], [0.003, 0.002], [0.005, 0.001], [0.004, -0.002], [0.001, -0.001], [0, 0]]
+    },
+    {
+      name: `${currentLocationName} 하천길 코스`,
+      desc: '하천을 따라 걷는 편안한 산책로. 물소리를 들으며 힐링할 수 있어요.',
+      difficulty: 'easy', distKm: 2.5, timeMin: 35, calories: 120,
+      purpose: ['relax', 'exercise'], allWeather: false,
+      reason: '하천변은 바람이 시원하고 자연을 느끼기 좋아요.',
+      points: [[0, 0], [0.002, 0.004], [0.005, 0.006], [0.008, 0.005], [0.010, 0.003]]
+    },
+    {
+      name: `${currentLocationName} 골목 탐험`,
+      desc: '좁은 골목과 벽화, 작은 가게들을 구경하며 걷는 코스. 사진 찍기 좋은 포인트가 많아요.',
+      difficulty: 'easy', distKm: 1.8, timeMin: 30, calories: 90,
+      purpose: ['photo', 'cafe'], allWeather: true,
+      reason: '건물 사이 그늘이 많아 날씨 영향을 덜 받아요.',
+      points: [[0, 0], [0.001, 0.003], [0.003, 0.004], [0.004, 0.002], [0.002, 0.001], [0.001, 0.002]]
+    },
+    {
+      name: `${currentLocationName} 언덕길 코스`,
+      desc: '가볍게 오르막을 오르며 동네 전경을 감상할 수 있는 코스. 정상에서 보는 뷰가 포인트!',
+      difficulty: 'medium', distKm: 2.0, timeMin: 40, calories: 180,
+      purpose: ['exercise', 'photo'], allWeather: false,
+      reason: '경사가 있어 운동 효과가 좋고, 전망이 좋아요.',
+      points: [[0, 0], [0.002, 0.001], [0.004, 0.003], [0.006, 0.005], [0.004, 0.004], [0.002, 0.002]]
+    },
+    {
+      name: `${currentLocationName} 카페 호핑 코스`,
+      desc: '동네 인기 카페 3곳을 경유하는 느긋한 코스. 걷고, 쉬고, 커피 마시고를 반복해요.',
+      difficulty: 'easy', distKm: 2.2, timeMin: 50, calories: 100,
+      purpose: ['cafe', 'relax'], allWeather: true,
+      reason: '실내에서 쉴 수 있어 날씨 걱정이 없어요.',
+      points: [[0, 0], [0.003, 0.001], [0.005, 0.004], [0.003, 0.005], [0.001, 0.003]]
+    },
+    {
+      name: `${currentLocationName} 순환 운동 코스`,
+      desc: '빠른 걸음으로 동네를 크게 한 바퀴 도는 코스. 운동 효과를 극대화할 수 있어요.',
+      difficulty: 'hard', distKm: 4.0, timeMin: 55, calories: 280,
+      purpose: ['exercise'], allWeather: false,
+      reason: '심박수를 올리기 좋은 구간이 포함되어 있어요.',
+      points: [[0, 0], [0.005, 0.008], [0.012, 0.006], [0.010, -0.002], [0.004, -0.003], [0, 0]]
+    },
+    {
+      name: `${currentLocationName} 야경 산책 코스`,
+      desc: '저녁에 걷기 좋은 가로등이 밝은 길 위주의 안전한 코스. 도시의 야경을 즐겨보세요.',
+      difficulty: 'easy', distKm: 1.5, timeMin: 25, calories: 70,
+      purpose: ['relax', 'photo'], allWeather: true,
+      reason: '가로등이 밝고 사람들이 많은 안전한 구간이에요.',
+      points: [[0, 0], [0.002, 0.003], [0.004, 0.002], [0.003, 0.000], [0.001, 0.001]]
+    },
+    {
+      name: `${currentLocationName} 둘레길 코스`,
+      desc: '동네 외곽을 따라 걷는 중거리 코스. 자연과 도시의 경계를 느낄 수 있어요.',
+      difficulty: 'medium', distKm: 3.5, timeMin: 50, calories: 200,
+      purpose: ['exercise', 'relax'], allWeather: false,
+      reason: '다양한 풍경 변화를 즐길 수 있는 코스에요.',
+      points: [[0, 0], [0.004, 0.006], [0.009, 0.004], [0.008, -0.001], [0.003, -0.002], [0, 0]]
+    }
+  ];
+
+  // AI 추천 로직: 목적, 시간, 날씨를 고려해 점수 매기기
+  const scored = allCourses.map(course => {
+    let score = 0;
+
+    // 목적 매칭
+    if (course.purpose.includes(selectedPurpose)) score += 30;
+
+    // 시간 매칭 (선택한 시간과 비슷할수록 높은 점수)
+    const timeDiff = Math.abs(course.timeMin - selectedTime);
+    score += Math.max(0, 25 - timeDiff);
+
+    // 날씨 고려
+    if (weather.code === 'rain' && course.allWeather) score += 20;
+    if (weather.code === 'rain' && !course.allWeather) score -= 15;
+    if (weather.temp > 30 && course.allWeather) score += 10;
+    if (weather.temp < 5 && course.allWeather) score += 10;
+    if (weather.pm25 >= 50 && course.timeMin <= 30) score += 10;
+    if (weather.pm25 >= 50 && course.timeMin > 45) score -= 10;
+
+    // 약간의 랜덤성 추가
+    score += Math.random() * 10;
+
+    return { ...course, score };
+  });
+
+  // 점수순 정렬 후 상위 3개
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 3);
+}
+
+// ===== 지도 표시 =====
+function showMap() {
+  const container = document.getElementById('mapContainer');
+  container.style.display = 'block';
+
+  if (!map) {
+    map = L.map('map').setView([currentLat, currentLng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+  } else {
+    map.setView([currentLat, currentLng], 15);
+  }
+
+  // 기존 레이어 제거
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+  }
+  routeLayer = L.layerGroup().addTo(map);
+
+  // 현재 위치 마커
+  L.marker([currentLat, currentLng])
+    .addTo(routeLayer)
+    .bindPopup(`📍 ${currentLocationName}`)
+    .openPopup();
+}
+
+function showCourseOnMap(course, index) {
+  if (!map || !routeLayer) return;
+
+  // 기존 레이어 초기화
+  routeLayer.clearLayers();
+
+  // 현재 위치 마커
+  L.marker([currentLat, currentLng])
+    .addTo(routeLayer)
+    .bindPopup(`📍 출발: ${currentLocationName}`);
+
+  // 코스 라인
+  const colors = ['#00b894', '#0984e3', '#e17055'];
+  const routePoints = course.points.map(p => [currentLat + p[0], currentLng + p[1]]);
+
+  L.polyline(routePoints, {
+    color: colors[index] || '#00b894',
+    weight: 4,
+    opacity: 0.8,
+    dashArray: '10, 8'
+  }).addTo(routeLayer);
+
+  // 경유 포인트
+  routePoints.forEach((point, i) => {
+    if (i === 0) return;
+    L.circleMarker(point, {
+      radius: 6,
+      fillColor: colors[index] || '#00b894',
+      color: 'white',
+      weight: 2,
+      fillOpacity: 0.8
+    }).addTo(routeLayer).bindPopup(`📌 경유지 ${i}`);
+  });
+
+  // 지도 범위 조정
+  map.fitBounds(routePoints, { padding: [30, 30] });
+}
+
+// ===== 코스 카드 렌더링 =====
+function renderCourses(courses) {
+  const section = document.getElementById('coursesSection');
+  const list = document.getElementById('coursesList');
+
+  section.style.display = 'block';
+  list.innerHTML = '';
+
+  courses.forEach((course, index) => {
+    const card = document.createElement('div');
+    card.className = 'course-card fade-in';
+    card.style.animationDelay = `${index * 0.15}s`;
+
+    const badgeClass = course.difficulty === 'easy' ? 'badge-easy' :
+                       course.difficulty === 'medium' ? 'badge-medium' : 'badge-hard';
+    const badgeText = course.difficulty === 'easy' ? '쉬움' :
+                      course.difficulty === 'medium' ? '보통' : '도전';
+
+    card.innerHTML = `
+      <div class="course-header">
+        <div class="course-name">${['🥇','🥈','🥉'][index]} ${course.name}</div>
+        <span class="course-badge ${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="course-desc">${course.desc}</div>
+      <div class="course-stats">
+        <div class="course-stat">📏 <strong>${course.distKm}km</strong></div>
+        <div class="course-stat">⏱️ <strong>${course.timeMin}분</strong></div>
+        <div class="course-stat">🔥 <strong>${course.calories}kcal</strong></div>
+      </div>
+      <div class="course-reason">${course.reason}</div>
+    `;
+
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.course-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      showCourseOnMap(course, index);
+    });
+
+    list.appendChild(card);
+  });
+
+  // 첫 번째 코스 자동 선택
+  if (courses.length > 0) {
+    list.children[0].classList.add('selected');
+    showCourseOnMap(courses[0], 0);
+  }
+}
+</script>
+
+</body>
+</html>
