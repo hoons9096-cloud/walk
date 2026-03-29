@@ -85,6 +85,7 @@
     font-family: inherit;
     outline: none;
     transition: border-color 0.2s;
+    min-width: 0;
   }
   .location-input:focus { border-color: #00b894; }
   .location-btn {
@@ -98,7 +99,18 @@
     transition: all 0.2s;
     white-space: nowrap;
   }
-  .btn-gps { background: #00b894; color: white; }
+  .btn-gps {
+    width: 100%;
+    padding: 12px;
+    background: #00b894;
+    color: white;
+    font-size: 0.95rem;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
   .btn-gps:hover { background: #00a381; }
   .btn-search { background: #0984e3; color: white; }
   .btn-search:hover { background: #0773c5; }
@@ -269,8 +281,8 @@
     <div class="location-row">
       <input type="text" class="location-input" id="locationInput" placeholder="예: 홍대입구역, 잠실역, 북촌..." />
       <button class="location-btn btn-search" onclick="searchLocation()">검색</button>
-      <button class="location-btn btn-gps" onclick="getMyLocation()">📍 내 위치</button>
     </div>
+    <button class="location-btn btn-gps" onclick="getMyLocation()">📍 현재 내 위치로 설정하기</button>
   </div>
 
   <div class="pref-section">
@@ -368,6 +380,35 @@ async function getWalkingRoute(waypoints) {
     console.error('OSRM 라우팅 오류:', e);
   }
   return null;
+}
+
+// ===== Overpass API로 주변 카페 검색 =====
+async function searchNearbyCafes(lat, lng, radiusMeters = 800) {
+  const query = `
+    [out:json][timeout:10];
+    (
+      node["amenity"="cafe"](around:${radiusMeters},${lat},${lng});
+      node["cuisine"="coffee"](around:${radiusMeters},${lat},${lng});
+    );
+    out body 20;
+  `;
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query)
+    });
+    const data = await res.json();
+    return data.elements.map(el => ({
+      lat: el.lat,
+      lng: el.lon,
+      name: el.tags.name || el.tags['name:ko'] || '카페',
+      brand: el.tags.brand || '',
+      opening: el.tags.opening_hours || ''
+    }));
+  } catch (e) {
+    console.error('카페 검색 오류:', e);
+    return [];
+  }
 }
 
 // ===== 경유지 생성 (겹치지 않는 순환 경로) =====
@@ -674,6 +715,16 @@ async function generateCourses() {
     }
   }
 
+  // 카페 탐방 모드면 주변 카페 검색
+  let nearbyCafes = [];
+  if (selectedPurpose === 'cafe') {
+    loadingText.textContent = '주변 카페를 검색하고 있어요...';
+    nearbyCafes = await searchNearbyCafes(currentLat, currentLng, 800);
+  }
+
+  // 코스 데이터에 카페 정보 첨부
+  coursesWithRoutes.forEach(c => { c.nearbyCafes = nearbyCafes; });
+
   loading.classList.remove('show');
   document.getElementById('generateBtn').disabled = false;
 
@@ -685,9 +736,15 @@ async function generateCourses() {
   else if (weather.temp < 5) msg += `추운 날씨라 따뜻한 카페를 경유하는 코스를 포함했어요. `;
   else msg += `산책하기 좋은 날씨네요! `;
 
-  if (weather.pm25 >= 50) msg += `미세먼지가 높으니 마스크를 착용하시고, 짧은 코스를 권장해요.`;
-  else if (weather.uvIndex >= 6) msg += `자외선이 강하니 모자나 선크림을 챙기세요!`;
-  else msg += `실제 도로를 기반으로 경로를 계산했어요. 🌿`;
+  if (selectedPurpose === 'cafe' && nearbyCafes.length > 0) {
+    msg += `<br>☕ 주변에서 <strong>${nearbyCafes.length}개의 카페</strong>를 찾았어요! 지도에서 확인해보세요.`;
+  } else if (selectedPurpose === 'cafe' && nearbyCafes.length === 0) {
+    msg += `주변 카페 정보를 찾지 못했어요. `;
+  }
+
+  if (weather.pm25 >= 50) msg += ` 미세먼지가 높으니 마스크를 착용하시고, 짧은 코스를 권장해요.`;
+  else if (weather.uvIndex >= 6) msg += ` 자외선이 강하니 모자나 선크림을 챙기세요!`;
+  else if (selectedPurpose !== 'cafe') msg += `실제 도로를 기반으로 경로를 계산했어요. 🌿`;
 
   aiMessage.innerHTML = msg;
   aiMessage.style.display = 'block';
@@ -793,6 +850,23 @@ function showCourseOnMap(course, index) {
           .addTo(routeLayer)
           .bindPopup(`📌 경유지 ${waypointNum}`);
         waypointNum++;
+      });
+    }
+
+    // 카페 마커 표시 (카페 탐방 모드)
+    if (course.nearbyCafes && course.nearbyCafes.length > 0) {
+      course.nearbyCafes.forEach(cafe => {
+        const cafeIcon = L.divIcon({
+          html: `<div style="background:#f8f9fa;border:2px solid #e17055;border-radius:8px;padding:2px 6px;font-size:11px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.15);display:flex;align-items:center;gap:3px;">☕ <span style="font-weight:600;color:#2d3436;max-width:100px;overflow:hidden;text-overflow:ellipsis;">${cafe.name}</span></div>`,
+          className: '',
+          iconAnchor: [12, 12]
+        });
+        let popupContent = `<strong>☕ ${cafe.name}</strong>`;
+        if (cafe.brand) popupContent += `<br><span style="color:#636e72;font-size:12px;">${cafe.brand}</span>`;
+        if (cafe.opening) popupContent += `<br><span style="color:#636e72;font-size:12px;">🕐 ${cafe.opening}</span>`;
+        L.marker([cafe.lat, cafe.lng], { icon: cafeIcon })
+          .addTo(routeLayer)
+          .bindPopup(popupContent);
       });
     }
 
