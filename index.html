@@ -6,6 +6,7 @@
 <title>🚶 동네 산책 코스 추천</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-polylinedecorator/dist/leaflet.polylineDecorator.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
 
@@ -369,8 +370,9 @@ async function getWalkingRoute(waypoints) {
   return null;
 }
 
-// ===== 경유지 생성 (원형/랜덤 패턴) =====
-// 출발지 주변으로 실제 도로 위의 경유지를 생성합니다
+// ===== 경유지 생성 (겹치지 않는 순환 경로) =====
+// 출발지 주변으로 한 방향(시계/반시계)으로 도는 순환 경유지를 생성합니다
+// → 같은 길을 두 번 지나지 않도록 설계
 function generateWaypoints(lat, lng, radiusKm, numPoints, pattern) {
   const waypoints = [[lat, lng]]; // 출발점
 
@@ -379,51 +381,54 @@ function generateWaypoints(lat, lng, radiusKm, numPoints, pattern) {
   const lngPerKm = 0.011;
 
   if (pattern === 'loop') {
-    // 순환 코스: 원형으로 경유지 배치
+    // 순환 코스: 한 방향으로 원형 순회 (겹침 없음)
+    const startAngle = Math.random() * 2 * Math.PI;
     for (let i = 0; i < numPoints; i++) {
-      const angle = (2 * Math.PI * i) / numPoints - Math.PI / 2;
-      const jitterLat = (Math.random() - 0.5) * radiusKm * 0.3 * latPerKm;
-      const jitterLng = (Math.random() - 0.5) * radiusKm * 0.3 * lngPerKm;
+      const angle = startAngle + (2 * Math.PI * i) / numPoints;
+      const r = radiusKm * (0.7 + Math.random() * 0.3);
       waypoints.push([
-        lat + Math.sin(angle) * radiusKm * latPerKm + jitterLat,
-        lng + Math.cos(angle) * radiusKm * lngPerKm + jitterLng
+        lat + Math.sin(angle) * r * latPerKm,
+        lng + Math.cos(angle) * r * lngPerKm
       ]);
     }
     waypoints.push([lat, lng]); // 출발점으로 복귀
+
   } else if (pattern === 'outAndBack') {
-    // 왕복 코스: 한 방향으로 갔다가 돌아오기
-    const angle = Math.random() * 2 * Math.PI;
-    for (let i = 1; i <= numPoints; i++) {
-      const ratio = i / numPoints;
-      const jitterLat = (Math.random() - 0.5) * radiusKm * 0.2 * latPerKm;
-      const jitterLng = (Math.random() - 0.5) * radiusKm * 0.2 * lngPerKm;
+    // 편도 코스: 한 방향으로 나가서 다른 길로 크게 돌아오기
+    // → 왕복이 아닌 넓은 타원형 순환으로 변경 (겹침 방지)
+    const startAngle = Math.random() * 2 * Math.PI;
+    const totalPoints = numPoints * 2;
+    for (let i = 0; i < totalPoints; i++) {
+      const angle = startAngle + (2 * Math.PI * i) / totalPoints;
+      // 타원형: 가는 방향은 멀리, 오는 방향은 가깝게
+      const progress = i / totalPoints;
+      const r = radiusKm * (progress < 0.5
+        ? (0.5 + progress * 1.0)  // 점점 멀어짐
+        : (1.5 - progress * 1.0)  // 점점 가까워짐
+      );
+      const jitter = radiusKm * 0.15;
       waypoints.push([
-        lat + Math.sin(angle) * radiusKm * ratio * latPerKm + jitterLat,
-        lng + Math.cos(angle) * radiusKm * ratio * lngPerKm + jitterLng
-      ]);
-    }
-    // 돌아오는 길 (약간 다른 경로)
-    const returnAngle = angle + (Math.random() * 0.5 - 0.25);
-    for (let i = numPoints - 1; i >= 1; i--) {
-      const ratio = i / numPoints;
-      const jitterLat = (Math.random() - 0.5) * radiusKm * 0.3 * latPerKm;
-      const jitterLng = (Math.random() - 0.5) * radiusKm * 0.3 * lngPerKm;
-      waypoints.push([
-        lat + Math.sin(returnAngle) * radiusKm * ratio * latPerKm + jitterLat,
-        lng + Math.cos(returnAngle) * radiusKm * ratio * lngPerKm + jitterLng
+        lat + Math.sin(angle) * r * latPerKm + (Math.random() - 0.5) * jitter * latPerKm,
+        lng + Math.cos(angle) * r * lngPerKm + (Math.random() - 0.5) * jitter * lngPerKm
       ]);
     }
     waypoints.push([lat, lng]);
+
   } else {
-    // 탐험 코스: 랜덤하게 돌아다니기
+    // 탐험 코스: 순서대로 돌아다니되, 시계 방향으로 정렬 (겹침 방지)
+    const points = [];
     for (let i = 0; i < numPoints; i++) {
       const angle = Math.random() * 2 * Math.PI;
       const dist = (0.3 + Math.random() * 0.7) * radiusKm;
-      waypoints.push([
-        lat + Math.sin(angle) * dist * latPerKm,
-        lng + Math.cos(angle) * dist * lngPerKm
-      ]);
+      points.push({
+        lat: lat + Math.sin(angle) * dist * latPerKm,
+        lng: lng + Math.cos(angle) * dist * lngPerKm,
+        angle: angle
+      });
     }
+    // 각도 순으로 정렬 → 순환하면서 겹치지 않음
+    points.sort((a, b) => a.angle - b.angle);
+    points.forEach(p => waypoints.push([p.lat, p.lng]));
     waypoints.push([lat, lng]);
   }
 
@@ -722,31 +727,72 @@ function showCourseOnMap(course, index) {
   const colors = ['#00b894', '#0984e3', '#e17055'];
   const color = colors[index] || '#00b894';
 
-  // 출발 마커
-  L.marker([currentLat, currentLng])
+  // 출발 마커 (커스텀 아이콘)
+  const startIcon = L.divIcon({
+    html: `<div style="background:${color};color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">S</div>`,
+    className: '',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  });
+  L.marker([currentLat, currentLng], { icon: startIcon })
     .addTo(routeLayer)
     .bindPopup(`📍 출발/도착: ${currentLocationName}`);
 
   // 실제 도로 경로 표시
   if (course.routePath && course.routePath.length > 1) {
+    // 경로 라인 (배경 - 두꺼운 흰색 테두리)
     L.polyline(course.routePath, {
-      color: color,
-      weight: 5,
+      color: 'white',
+      weight: 8,
       opacity: 0.8,
-      lineJoin: 'round'
+      lineJoin: 'round',
+      lineCap: 'round'
     }).addTo(routeLayer);
 
-    // 경유지 마커 표시
+    // 경로 라인 (전경 - 색상)
+    const routeLine = L.polyline(course.routePath, {
+      color: color,
+      weight: 5,
+      opacity: 0.9,
+      lineJoin: 'round',
+      lineCap: 'round'
+    }).addTo(routeLayer);
+
+    // 화살표 데코레이터 추가 (방향 표시)
+    L.polylineDecorator(routeLine, {
+      patterns: [
+        {
+          offset: '5%',
+          repeat: 80,
+          symbol: L.Symbol.arrowHead({
+            pixelSize: 12,
+            polygon: true,
+            pathOptions: {
+              color: color,
+              fillColor: color,
+              fillOpacity: 1,
+              weight: 1
+            }
+          })
+        }
+      ]
+    }).addTo(routeLayer);
+
+    // 경유지 마커 (번호 표시)
     if (course.waypoints) {
+      let waypointNum = 1;
       course.waypoints.forEach((point, i) => {
-        if (i === 0 || i === course.waypoints.length - 1) return; // 출발/도착 제외
-        L.circleMarker(point, {
-          radius: 7,
-          fillColor: color,
-          color: 'white',
-          weight: 2,
-          fillOpacity: 0.9
-        }).addTo(routeLayer).bindPopup(`📌 경유지 ${i}`);
+        if (i === 0 || i === course.waypoints.length - 1) return;
+        const wpIcon = L.divIcon({
+          html: `<div style="background:white;color:${color};border:2px solid ${color};border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 1px 4px rgba(0,0,0,0.2);">${waypointNum}</div>`,
+          className: '',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
+        });
+        L.marker(point, { icon: wpIcon })
+          .addTo(routeLayer)
+          .bindPopup(`📌 경유지 ${waypointNum}`);
+        waypointNum++;
       });
     }
 
